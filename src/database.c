@@ -37,6 +37,8 @@ int database_init(int argc, char **argv) {
   return status;
 }
 
+
+
 void database_fini() {
   int status = sqlite3_close_v2(g_database);
   if (status != SQLITE_OK) {

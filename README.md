@@ -39,9 +39,9 @@ Only tested on GNU/Linux system
 
 ### Prerequisite
 
-#### SQLite3
+#### SQLite `3.37.0+`
 
-Please make sure that you have SQLite3 installed on your system accessible by CMake build system.
+Please make sure that you have SQLite version 3.37.0 or higher installed on your system accessible by CMake build system.
 
 #### Concord `v3.X.X`
 

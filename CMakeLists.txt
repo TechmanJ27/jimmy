@@ -43,6 +43,7 @@ add_executable(jimmy
         src/images.h
         src/statements/database_init.h
         src/statements/helper.h
+        src/statements/check_version.h
 )
 
 target_link_libraries(jimmy PRIVATE

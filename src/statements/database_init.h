@@ -7,29 +7,30 @@ static const char *g_database_init_stmt = MK_STMT(
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 PRAGMA cache_size = -200000;
+PRAGMA temp_store = MEMORY;
 
 PRAGMA user_version = 1;
 
 CREATE TABLE IF NOT EXISTS guild_dat (
   gid INTEGER PRIMARY KEY,
-  ccid INTEGER NOT NULL,
-  crid INTEGER NOT NULL
+  appeal TEXT,
+  curr_cid INTEGER NOT NULL DEFAULT 0,
+  rids TEXT DEFAULT
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS rules (
-  rid INTEGER PRIMARY KEY,
-  indx INTEGER,
+  rid INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   desc TEXT NOT NULL,
   color TEXT NOT NULL,
-  img TEXT NOT NULL
+  img TEXT
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS log_conf (
   gid INTEGER PRIMARY KEY,
   message INTEGER,
   member INTEGER,
-  welcome INTEGER,
+  join_leave INTEGER,
   media INTEGER,
   mod INTEGER
 ) STRICT;
@@ -40,16 +41,26 @@ CREATE TABLE IF NOT EXISTS cases (
   uid INTEGER NOT NULL,
   type INTEGER NOT NULL,
   rid INTEGER NOT NULL,
+  mod_uid INTEGER NOT NULL,
   note TEXT,
   time INTEGER NOT NULL,
-  PRIMARY KEY (gid, uid)
+  expire INTEGER,
+  PRIMARY KEY (id, gid)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS tbans (
   gid INTEGER NOT NULL,
   uid INTEGER NOT NULL,
+  cid INTEGER NOT NULL,
   expire INTEGER NOT NULL,
   PRIMARY KEY (gid, uid)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS members (
+  uid INTEGER NOT NULL,
+  gid INTEGER NOT NULL,
+  note TEXT,
+  watch INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 );
 
