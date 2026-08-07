@@ -1,8 +1,6 @@
 #ifndef DATABASE_H
 #define DATABASE_H
 
-#include <stdint.h>
-
 #include <concord/discord.h>
 
 struct DatabaseGuildDat {
@@ -19,6 +17,15 @@ struct DatabaseConf {
   u64snowflake *watch;
   u64snowflake *mod;
   u64snowflake *appeal;
+};
+
+enum DatabaseConfField {
+  DATABASE_CONF_MESSAGE = 1u << 0,
+  DATABASE_CONF_MEMBER = 1u << 1,
+  DATABASE_CONF_JOIN_LEAVE = 1u << 2,
+  DATABASE_CONF_WATCH = 1u << 3,
+  DATABASE_CONF_MOD = 1u << 4,
+  DATABASE_CONF_APPEAL = 1u << 5
 };
 
 struct DatabaseRule {
@@ -44,7 +51,6 @@ struct DatabaseCase {
 struct DatabaseMember {
   u64snowflake *uid;
   u64snowflake *gid;
-  const char *note;
   u64snowflake *link_uid;
   int *watch;
 };
@@ -56,17 +62,27 @@ struct DatabaseTban {
   int64_t *expire;
 };
 
+struct DatabaseTbanKey {
+  u64snowflake gid;
+  u64snowflake uid;
+};
+
 int database_init(int argc, char **argv);
 void database_fini();
 int database_get_version(void);
 
 int database_set_guild_dat(const struct DatabaseGuildDat *data);
 int database_set_conf(const struct DatabaseConf *data);
+int database_update_conf(u64snowflake gid, unsigned fields,
+                         const struct DatabaseConf *data);
 int64_t database_add_rule(const struct DatabaseRule *rule);
 int database_add_case(const struct DatabaseCase *case_data);
 int database_add_tban(u64snowflake gid, u64snowflake uid, int64_t cid, int64_t expire);
-int database_remove_expired_tbans(int64_t timestamp);
+int database_remove_expired_tbans(int64_t timestamp,
+                                       struct DatabaseTbanKey **removed,
+                                       size_t *count);
 int database_set_member(const struct DatabaseMember *member);
+int database_set_member_watch(u64snowflake uid, u64snowflake gid, int watch);
 
 struct DatabaseGuildDat *database_get_guild_dat(u64snowflake gid);
 struct DatabaseRule *database_get_rule(int64_t rid);
@@ -79,10 +95,5 @@ void database_free_rule(struct DatabaseRule *rule);
 void database_free_case(struct DatabaseCase *case_data);
 void database_free_conf(struct DatabaseConf *data);
 void database_free_tban(struct DatabaseTban *tban);
-
-int database_modify_case(const struct DatabaseCase *case_data);
-int database_modify_tban(u64snowflake gid, u64snowflake uid, int64_t cid,
-                         int64_t expire);
-int database_modify_member(const struct DatabaseMember *member);
 
 #endif // DATABASE_H

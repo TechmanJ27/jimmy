@@ -27,11 +27,9 @@ Actually! Jimmy is a multipurpose open source Discord bot written in C by TheMon
 - Fun
     - Coin flip!
     - Dice rolling!
-    - D20 fight!
     - Sending random cats/dogs/foxes pictures!
-    - Getting profile picture of a member!
-    - See how many message did a member send and automatically give role once they meet a certain requirement!
-    - And more!
+    - Getting a profile picture of a member!
+    - And more to come!
 
 ## Building
 

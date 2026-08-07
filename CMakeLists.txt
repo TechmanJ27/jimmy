@@ -41,6 +41,9 @@ add_executable(jimmy
         src/commands/about.h
         src/colors.h
         src/images.h
+        src/commands/avatar.c
+        src/commands/avatar.h
+
         src/statements/database_init.h
         src/statements/helper.h
         src/statements/check_version.h
@@ -57,12 +60,20 @@ add_executable(jimmy
         src/statements/get_case.h
         src/statements/get_conf.h
         src/statements/get_tban.h
+        src/statements/update_conf.h
+        src/statements/set_member_watch.h
+        src/commands/d20.c
+        src/commands/d20.h
+        src/commands/roll.c
+        src/commands/roll.h
+        src/random.c
+        src/random.h
 )
 
 target_link_libraries(jimmy PRIVATE
         Threads::Threads
         CURL::libcurl
-        SQLite::SQLite3
+        SQLite3::SQLite3
         PkgConfig::Concord
 )
 

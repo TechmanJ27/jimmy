@@ -20,6 +20,8 @@
 #include "statements/member.h"
 #include "statements/remove_expired_tbans.h"
 #include "statements/set_version.h"
+#include "statements/set_member_watch.h"
+#include "statements/update_conf.h"
 
 static sqlite3 *g_database = NULL;
 
@@ -90,7 +92,7 @@ int database_init(int argc, char **argv) {
     database_fini();
     return SQLITE_ERROR;
   }
-  if (version != 0 && version != DATABASE_CURRENT_VERSION) {
+  if (version != 0 && version < DATABASE_CURRENT_VERSION) {
     fprintf(stderr, "Unsupported database version: %d (expected %d)\n",
             version, DATABASE_CURRENT_VERSION);
     database_fini();
@@ -183,6 +185,40 @@ int database_set_conf(const struct DatabaseConf *data) {
   return status == SQLITE_OK ? execute(stmt) : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
 }
 
+int database_update_conf(u64snowflake gid, unsigned fields,
+                         const struct DatabaseConf *data) {
+  static sqlite3_stmt *stmt = NULL;
+  static sqlite3 *owner = NULL;
+  const u64snowflake *values[6] = {NULL, NULL, NULL, NULL, NULL, NULL};
+  const unsigned MASKS[6] = {
+      DATABASE_CONF_MESSAGE, DATABASE_CONF_MEMBER, DATABASE_CONF_JOIN_LEAVE,
+      DATABASE_CONF_WATCH, DATABASE_CONF_MOD, DATABASE_CONF_APPEAL};
+  if (fields == 0 || (fields & ~((1u << 6) - 1u)) != 0)
+    return SQLITE_MISUSE;
+  if (data != NULL) {
+    values[0] = data->message;
+    values[1] = data->member;
+    values[2] = data->join_leave;
+    values[3] = data->watch;
+    values[4] = data->mod;
+    values[5] = data->appeal;
+  }
+
+  int status = prepare_lazy(g_update_conf_stmt, &stmt, &owner);
+  if (status != SQLITE_OK)
+    return status;
+  for (size_t i = 0; i < 6 && status == SQLITE_OK; i++) {
+    status = sqlite3_bind_int(stmt, (int)(i * 2 + 1),
+                              (fields & MASKS[i]) != 0);
+    if (status == SQLITE_OK)
+      status = bind_optional_snowflake(stmt, (int)(i * 2 + 2), values[i]);
+  }
+  if (status == SQLITE_OK)
+    status = bind_snowflake(stmt, 13, gid);
+  return status == SQLITE_OK ? execute(stmt)
+                             : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
+}
+
 int64_t database_add_rule(const struct DatabaseRule *rule) {
   static sqlite3_stmt *stmt = NULL;
   static sqlite3 *owner = NULL;
@@ -261,14 +297,52 @@ int database_add_tban(u64snowflake gid, u64snowflake uid, int64_t cid,
   return status == SQLITE_OK ? execute(stmt) : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
 }
 
-int database_remove_expired_tbans(int64_t timestamp) {
+int database_remove_expired_tbans(int64_t timestamp,
+                                       struct DatabaseTbanKey **removed,
+                                       size_t *count) {
+  if (removed == NULL || count == NULL)
+    return SQLITE_MISUSE;
+  *removed = NULL;
+  *count = 0;
+
   static sqlite3_stmt *stmt = NULL;
   static sqlite3 *owner = NULL;
   int status = prepare_lazy(g_remove_expired_tbans_stmt, &stmt, &owner);
   if (status != SQLITE_OK)
     return status;
   status = sqlite3_bind_int64(stmt, 1, timestamp);
-  return status == SQLITE_OK ? execute(stmt) : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
+  if (status != SQLITE_OK) {
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+    return status;
+  }
+
+  while ((status = sqlite3_step(stmt)) == SQLITE_ROW) {
+    struct DatabaseTbanKey *next = realloc(
+        *removed, (*count + 1) * sizeof(**removed));
+    if (next == NULL) {
+      free(*removed);
+      *removed = NULL;
+      *count = 0;
+      sqlite3_reset(stmt);
+      sqlite3_clear_bindings(stmt);
+      return SQLITE_NOMEM;
+    }
+    *removed = next;
+    (*removed)[*count].gid = (u64snowflake)sqlite3_column_int64(stmt, 0);
+    (*removed)[*count].uid = (u64snowflake)sqlite3_column_int64(stmt, 1);
+    (*count)++;
+  }
+
+  sqlite3_reset(stmt);
+  sqlite3_clear_bindings(stmt);
+  if (status != SQLITE_DONE) {
+    free(*removed);
+    *removed = NULL;
+    *count = 0;
+    return status;
+  }
+  return SQLITE_OK;
 }
 
 int database_set_member(const struct DatabaseMember *member) {
@@ -284,12 +358,25 @@ int database_set_member(const struct DatabaseMember *member) {
   if (status == SQLITE_OK)
     status = bind_snowflake(stmt, 2, *member->gid);
   if (status == SQLITE_OK)
-    status = bind_optional_text(stmt, 3, member->note);
+    status = bind_optional_snowflake(stmt, 3, member->link_uid);
   if (status == SQLITE_OK)
-    status = bind_optional_snowflake(stmt, 4, member->link_uid);
-  if (status == SQLITE_OK)
-    status = sqlite3_bind_int(stmt, 5, *member->watch);
+    status = sqlite3_bind_int(stmt, 4, *member->watch);
   return status == SQLITE_OK ? execute(stmt) : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
+}
+
+int database_set_member_watch(u64snowflake uid, u64snowflake gid, int watch) {
+  static sqlite3_stmt *stmt = NULL;
+  static sqlite3 *owner = NULL;
+  int status = prepare_lazy(g_set_member_watch_stmt, &stmt, &owner);
+  if (status != SQLITE_OK)
+    return status;
+  status = bind_snowflake(stmt, 1, uid);
+  if (status == SQLITE_OK)
+    status = bind_snowflake(stmt, 2, gid);
+  if (status == SQLITE_OK)
+    status = sqlite3_bind_int(stmt, 3, watch);
+  return status == SQLITE_OK ? execute(stmt)
+                             : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
 }
 
 static char *copy_column_text(sqlite3_stmt *stmt, int column) {
@@ -581,17 +668,4 @@ void database_free_tban(struct DatabaseTban *tban) {
   free(tban->cid);
   free(tban->expire);
   free(tban);
-}
-
-int database_modify_case(const struct DatabaseCase *case_data) {
-  return database_add_case(case_data);
-}
-
-int database_modify_tban(u64snowflake gid, u64snowflake uid, int64_t cid,
-                         int64_t expire) {
-  return database_add_tban(gid, uid, cid, expire);
-}
-
-int database_modify_member(const struct DatabaseMember *member) {
-  return database_set_member(member);
 }

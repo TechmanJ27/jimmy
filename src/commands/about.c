@@ -9,7 +9,7 @@ static const struct discord_embed_field G_FIELDS[] = {
   {
     .name = "What is Jimmy?",
     .value = "Jimmy is a multipurpose open source Discord bot written in C by TheMonHub"
-             "using [Concord](https://github.com/Cogmasters/concord)."
+             " using [Concord](https://github.com/Cogmasters/concord)."
   },
   {
     .name = "Version",
@@ -24,10 +24,6 @@ static const struct discord_embed_field G_FIELDS[] = {
 static const struct discord_embed G_EMBEDS[] = {
   {
     .title = "About",
-    .image =
-        &(struct discord_embed_image){
-          .url = JIMMY_IMAGE_URL,
-      },
     .description = "A Discord bot that will conquer the world one day...",
     .color = COLOR_BLUE,
     .footer =
