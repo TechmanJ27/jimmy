@@ -44,6 +44,19 @@ add_executable(jimmy
         src/statements/database_init.h
         src/statements/helper.h
         src/statements/check_version.h
+        src/statements/set_version.h
+        src/statements/guild_dat.h
+        src/statements/conf.h
+        src/statements/add_rule.h
+        src/statements/add_case.h
+        src/statements/add_tban.h
+        src/statements/remove_expired_tbans.h
+        src/statements/member.h
+        src/statements/get_guild_dat.h
+        src/statements/get_rule.h
+        src/statements/get_case.h
+        src/statements/get_conf.h
+        src/statements/get_tban.h
 )
 
 target_link_libraries(jimmy PRIVATE

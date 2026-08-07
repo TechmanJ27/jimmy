@@ -9,30 +9,28 @@ PRAGMA synchronous = NORMAL;
 PRAGMA cache_size = -200000;
 PRAGMA temp_store = MEMORY;
 
-PRAGMA user_version = 1;
-
 CREATE TABLE IF NOT EXISTS guild_dat (
   gid INTEGER PRIMARY KEY,
-  appeal TEXT,
   curr_cid INTEGER NOT NULL DEFAULT 0,
-  rids TEXT DEFAULT
+  rids TEXT NOT NULL DEFAULT ""
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS rules (
   rid INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
-  desc TEXT NOT NULL,
+  desc TEXT,
   color TEXT NOT NULL,
   img TEXT
 ) STRICT;
 
-CREATE TABLE IF NOT EXISTS log_conf (
+CREATE TABLE IF NOT EXISTS conf (
   gid INTEGER PRIMARY KEY,
   message INTEGER,
   member INTEGER,
   join_leave INTEGER,
-  media INTEGER,
-  mod INTEGER
+  watch INTEGER,
+  mod INTEGER,
+  appeal INTEGER
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS cases (
@@ -41,6 +39,7 @@ CREATE TABLE IF NOT EXISTS cases (
   uid INTEGER NOT NULL,
   type INTEGER NOT NULL,
   rid INTEGER NOT NULL,
+  mess_id INTEGER,
   mod_uid INTEGER NOT NULL,
   note TEXT,
   time INTEGER NOT NULL,
@@ -60,8 +59,12 @@ CREATE TABLE IF NOT EXISTS members (
   uid INTEGER NOT NULL,
   gid INTEGER NOT NULL,
   note TEXT,
-  watch INTEGER NOT NULL DEFAULT 0
+  link_uid INTEGER,
+  watch INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (uid, gid)
 ) STRICT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS members_gid_uid ON members (gid, uid);
 );
 
 #endif // DATABASE_INIT_H
