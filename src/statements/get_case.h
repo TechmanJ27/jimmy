@@ -4,7 +4,7 @@
 #include "helper.h"
 
 static const char *g_get_case_stmt = MK_STMT(
-SELECT id, gid, uid, type, rid, mess_id, mod_uid, note, time, expire
+SELECT id, gid, uid, type, rule_title, rule_desc, mess_id, mod_uid, note, time, expire
 FROM cases WHERE id = ? AND gid = ?;
 );
 

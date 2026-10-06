@@ -19,9 +19,12 @@
 #include "statements/guild_dat.h"
 #include "statements/member.h"
 #include "statements/remove_expired_tbans.h"
+#include "statements/reset_rules.h"
 #include "statements/set_version.h"
 #include "statements/set_member_watch.h"
 #include "statements/update_conf.h"
+
+// Half Human Made and Half Vibe Coded 😭
 
 static sqlite3 *g_database = NULL;
 
@@ -148,7 +151,7 @@ int database_set_guild_dat(const struct DatabaseGuildDat *data) {
   static sqlite3_stmt *stmt = NULL;
   static sqlite3 *owner = NULL;
   if (data == NULL || data->gid == NULL || data->curr_cid == NULL ||
-      data->rids == NULL)
+      data->curr_rid == NULL)
     return SQLITE_MISUSE;
   int status = prepare_lazy(g_set_guild_dat_stmt, &stmt, &owner);
   if (status != SQLITE_OK)
@@ -157,7 +160,7 @@ int database_set_guild_dat(const struct DatabaseGuildDat *data) {
   if (status == SQLITE_OK)
     status = sqlite3_bind_int64(stmt, 2, *data->curr_cid);
   if (status == SQLITE_OK)
-    status = bind_optional_text(stmt, 3, data->rids);
+    status = sqlite3_bind_int64(stmt, 3, *data->curr_rid);
   return status == SQLITE_OK ? execute(stmt) : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
 }
 
@@ -181,7 +184,7 @@ int database_set_conf(const struct DatabaseConf *data) {
   if (status == SQLITE_OK)
     status = bind_optional_snowflake(stmt, 6, data->mod);
   if (status == SQLITE_OK)
-    status = bind_optional_snowflake(stmt, 7, data->appeal);
+    status = bind_optional_text(stmt, 7, data->appeal);
   return status == SQLITE_OK ? execute(stmt) : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
 }
 
@@ -189,10 +192,10 @@ int database_update_conf(u64snowflake gid, unsigned fields,
                          const struct DatabaseConf *data) {
   static sqlite3_stmt *stmt = NULL;
   static sqlite3 *owner = NULL;
-  const u64snowflake *values[6] = {NULL, NULL, NULL, NULL, NULL, NULL};
-  const unsigned MASKS[6] = {
+  const u64snowflake *values[5] = {NULL, NULL, NULL, NULL, NULL};
+  const unsigned MASKS[5] = {
       DATABASE_CONF_MESSAGE, DATABASE_CONF_MEMBER, DATABASE_CONF_JOIN_LEAVE,
-      DATABASE_CONF_WATCH, DATABASE_CONF_MOD, DATABASE_CONF_APPEAL};
+      DATABASE_CONF_WATCH, DATABASE_CONF_MOD};
   if (fields == 0 || (fields & ~((1u << 6) - 1u)) != 0)
     return SQLITE_MISUSE;
   if (data != NULL) {
@@ -201,18 +204,21 @@ int database_update_conf(u64snowflake gid, unsigned fields,
     values[2] = data->join_leave;
     values[3] = data->watch;
     values[4] = data->mod;
-    values[5] = data->appeal;
   }
 
   int status = prepare_lazy(g_update_conf_stmt, &stmt, &owner);
   if (status != SQLITE_OK)
     return status;
-  for (size_t i = 0; i < 6 && status == SQLITE_OK; i++) {
+  for (size_t i = 0; i < 5 && status == SQLITE_OK; i++) {
     status = sqlite3_bind_int(stmt, (int)(i * 2 + 1),
                               (fields & MASKS[i]) != 0);
     if (status == SQLITE_OK)
       status = bind_optional_snowflake(stmt, (int)(i * 2 + 2), values[i]);
   }
+  if (status == SQLITE_OK)
+    status = sqlite3_bind_int(stmt, 11, (fields & DATABASE_CONF_APPEAL) != 0);
+  if (status == SQLITE_OK)
+    status = bind_optional_text(stmt, 12, data != NULL ? data->appeal : NULL);
   if (status == SQLITE_OK)
     status = bind_snowflake(stmt, 13, gid);
   return status == SQLITE_OK ? execute(stmt)
@@ -220,31 +226,98 @@ int database_update_conf(u64snowflake gid, unsigned fields,
 }
 
 int64_t database_add_rule(const struct DatabaseRule *rule) {
-  static sqlite3_stmt *stmt = NULL;
-  static sqlite3 *owner = NULL;
-  if (rule == NULL || rule->title == NULL || rule->color == NULL)
+  static sqlite3_stmt *inc_stmt = NULL;
+  static sqlite3 *inc_owner = NULL;
+  static sqlite3_stmt *add_stmt = NULL;
+  static sqlite3 *add_owner = NULL;
+
+  if (rule == NULL || rule->gid == NULL || rule->title == NULL ||
+      rule->color == NULL)
     return -1;
-  if (prepare_lazy(g_add_rule_stmt, &stmt, &owner) != SQLITE_OK)
+
+  int status = prepare_lazy(g_inc_rule_stmt, &inc_stmt, &inc_owner);
+  if (status != SQLITE_OK)
     return -1;
-  int status = sqlite3_bind_text(stmt, 1, rule->title, -1, SQLITE_TRANSIENT);
-  if (status == SQLITE_OK)
-    status = bind_optional_text(stmt, 2, rule->description);
-  if (status == SQLITE_OK)
-    status = sqlite3_bind_text(stmt, 3, rule->color, -1, SQLITE_TRANSIENT);
-  if (status == SQLITE_OK)
-    status = bind_optional_text(stmt, 4, rule->image);
+
+  status = bind_snowflake(inc_stmt, 1, *rule->gid);
   if (status != SQLITE_OK) {
-    sqlite3_reset(stmt);
-    sqlite3_clear_bindings(stmt);
+    sqlite3_reset(inc_stmt);
+    sqlite3_clear_bindings(inc_stmt);
     return -1;
   }
-  status = sqlite3_step(stmt);
-  int64_t rid = status == SQLITE_DONE
-                    ? (int64_t)sqlite3_last_insert_rowid(g_database)
-                    : -1;
-  sqlite3_reset(stmt);
-  sqlite3_clear_bindings(stmt);
+
+  status = sqlite3_step(inc_stmt);
+  if (status != SQLITE_ROW) {
+    sqlite3_reset(inc_stmt);
+    sqlite3_clear_bindings(inc_stmt);
+    return -1;
+  }
+
+  int64_t rid = sqlite3_column_int64(inc_stmt, 0);
+  sqlite3_reset(inc_stmt);
+  sqlite3_clear_bindings(inc_stmt);
+
+  status = prepare_lazy(g_add_rule_stmt, &add_stmt, &add_owner);
+  if (status != SQLITE_OK)
+    return -1;
+
+  status = bind_snowflake(add_stmt, 1, *rule->gid);
+  if (status == SQLITE_OK)
+    status = sqlite3_bind_int64(add_stmt, 2, rid);
+  if (status == SQLITE_OK)
+    status = sqlite3_bind_text(add_stmt, 3, rule->title, -1, SQLITE_TRANSIENT);
+  if (status == SQLITE_OK)
+    status = bind_optional_text(add_stmt, 4, rule->description);
+  if (status == SQLITE_OK)
+    status = sqlite3_bind_text(add_stmt, 5, rule->color, -1, SQLITE_TRANSIENT);
+  if (status == SQLITE_OK)
+    status = bind_optional_text(add_stmt, 6, rule->image);
+
+  if (status != SQLITE_OK) {
+    sqlite3_reset(add_stmt);
+    sqlite3_clear_bindings(add_stmt);
+    return -1;
+  }
+
+  status = execute(add_stmt);
+  if (status != SQLITE_OK)
+    return -1;
+
+  if (rule->rid != NULL)
+    *rule->rid = rid;
+
   return rid;
+}
+
+int database_reset_rules(u64snowflake gid) {
+  static sqlite3_stmt *stmt_rules = NULL;
+  static sqlite3 *owner_rules = NULL;
+  static sqlite3_stmt *stmt_guild = NULL;
+  static sqlite3 *owner_guild = NULL;
+
+  int status = prepare_lazy(g_reset_rules_stmt, &stmt_rules, &owner_rules);
+  if (status != SQLITE_OK)
+    return status;
+  status = bind_snowflake(stmt_rules, 1, gid);
+  if (status != SQLITE_OK) {
+    sqlite3_reset(stmt_rules);
+    sqlite3_clear_bindings(stmt_rules);
+    return status;
+  }
+  status = execute(stmt_rules);
+  if (status != SQLITE_OK)
+    return status;
+
+  status = prepare_lazy(g_reset_guild_dat_rid_stmt, &stmt_guild, &owner_guild);
+  if (status != SQLITE_OK)
+    return status;
+  status = bind_snowflake(stmt_guild, 1, gid);
+  if (status != SQLITE_OK) {
+    sqlite3_reset(stmt_guild);
+    sqlite3_clear_bindings(stmt_guild);
+    return status;
+  }
+  return execute(stmt_guild);
 }
 
 int database_add_case(const struct DatabaseCase *case_data) {
@@ -252,7 +325,7 @@ int database_add_case(const struct DatabaseCase *case_data) {
   static sqlite3 *owner = NULL;
   if (case_data == NULL || case_data->id == NULL || case_data->gid == NULL ||
       case_data->uid == NULL || case_data->type == NULL ||
-      case_data->rid == NULL || case_data->mod_uid == NULL ||
+      case_data->rule_title == NULL || case_data->mod_uid == NULL ||
       case_data->time == NULL)
     return SQLITE_MISUSE;
   int status = prepare_lazy(g_add_case_stmt, &stmt, &owner);
@@ -266,17 +339,20 @@ int database_add_case(const struct DatabaseCase *case_data) {
   if (status == SQLITE_OK)
     status = sqlite3_bind_int(stmt, 4, *case_data->type);
   if (status == SQLITE_OK)
-    status = sqlite3_bind_int64(stmt, 5, *case_data->rid);
+    status = sqlite3_bind_text(stmt, 5, case_data->rule_title, -1,
+                               SQLITE_TRANSIENT);
   if (status == SQLITE_OK)
-    status = bind_optional_snowflake(stmt, 6, case_data->message_id);
+    status = bind_optional_text(stmt, 6, case_data->rule_description);
   if (status == SQLITE_OK)
-    status = bind_snowflake(stmt, 7, *case_data->mod_uid);
+    status = bind_optional_snowflake(stmt, 7, case_data->message_id);
   if (status == SQLITE_OK)
-    status = bind_optional_text(stmt, 8, case_data->note);
+    status = bind_snowflake(stmt, 8, *case_data->mod_uid);
   if (status == SQLITE_OK)
-    status = sqlite3_bind_int64(stmt, 9, *case_data->time);
+    status = bind_optional_text(stmt, 9, case_data->note);
   if (status == SQLITE_OK)
-    status = bind_optional_int64(stmt, 10, case_data->expire);
+    status = sqlite3_bind_int64(stmt, 10, *case_data->time);
+  if (status == SQLITE_OK)
+    status = bind_optional_int64(stmt, 11, case_data->expire);
   return status == SQLITE_OK ? execute(stmt) : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
 }
 
@@ -510,12 +586,14 @@ struct DatabaseGuildDat *database_get_guild_dat(u64snowflake gid) {
   if (data != NULL) {
     data->gid = malloc(sizeof(*data->gid));
     data->curr_cid = malloc(sizeof(*data->curr_cid));
-    data->rids = copy_column_text(stmt, 2);
+    data->curr_rid = malloc(sizeof(*data->curr_rid));
     if (data->gid != NULL)
       *data->gid = (u64snowflake)sqlite3_column_int64(stmt, 0);
     if (data->curr_cid != NULL)
       *data->curr_cid = sqlite3_column_int64(stmt, 1);
-    if (data->gid == NULL || data->curr_cid == NULL || data->rids == NULL) {
+    if (data->curr_rid != NULL)
+      *data->curr_rid = sqlite3_column_int64(stmt, 2);
+    if (data->gid == NULL || data->curr_cid == NULL || data->curr_rid == NULL) {
       database_free_guild_dat(data);
       data = NULL;
     }
@@ -525,12 +603,14 @@ struct DatabaseGuildDat *database_get_guild_dat(u64snowflake gid) {
   return data;
 }
 
-struct DatabaseRule *database_get_rule(int64_t rid) {
+struct DatabaseRule *database_get_rule(u64snowflake gid, int64_t rid) {
   static sqlite3_stmt *stmt = NULL;
   static sqlite3 *owner = NULL;
   if (prepare_lazy(g_get_rule_stmt, &stmt, &owner) != SQLITE_OK)
     return NULL;
-  int status = sqlite3_bind_int64(stmt, 1, rid);
+  int status = bind_snowflake(stmt, 1, gid);
+  if (status == SQLITE_OK)
+    status = sqlite3_bind_int64(stmt, 2, rid);
   if (status == SQLITE_OK)
     status = sqlite3_step(stmt);
   if (status != SQLITE_ROW) {
@@ -541,13 +621,21 @@ struct DatabaseRule *database_get_rule(int64_t rid) {
 
   struct DatabaseRule *rule = calloc(1, sizeof(*rule));
   if (rule != NULL) {
-    rule->title = copy_column_text(stmt, 0);
-    rule->description = copy_column_text(stmt, 1);
-    rule->color = copy_column_text(stmt, 2);
-    rule->image = copy_column_text(stmt, 3);
-    if (rule->title == NULL || rule->description == NULL ||
+    rule->gid = malloc(sizeof(*rule->gid));
+    rule->rid = malloc(sizeof(*rule->rid));
+    rule->title = copy_column_text(stmt, 2);
+    rule->description = copy_column_text(stmt, 3);
+    rule->color = copy_column_text(stmt, 4);
+    rule->image = copy_column_text(stmt, 5);
+    if (rule->gid != NULL)
+      *rule->gid = (u64snowflake)sqlite3_column_int64(stmt, 0);
+    if (rule->rid != NULL)
+      *rule->rid = sqlite3_column_int64(stmt, 1);
+    if (rule->gid == NULL || rule->rid == NULL || rule->title == NULL ||
         rule->color == NULL ||
-        (sqlite3_column_type(stmt, 3) != SQLITE_NULL && rule->image == NULL)) {
+        (sqlite3_column_type(stmt, 3) != SQLITE_NULL &&
+         rule->description == NULL) ||
+        (sqlite3_column_type(stmt, 5) != SQLITE_NULL && rule->image == NULL)) {
       database_free_rule(rule);
       rule = NULL;
     }
@@ -579,14 +667,15 @@ struct DatabaseCase *database_get_case(int64_t id, u64snowflake gid) {
     case_data->gid = malloc(sizeof(*case_data->gid));
     case_data->uid = malloc(sizeof(*case_data->uid));
     case_data->type = malloc(sizeof(*case_data->type));
-    case_data->rid = malloc(sizeof(*case_data->rid));
-    case_data->message_id = sqlite3_column_type(stmt, 5) == SQLITE_NULL
+    case_data->rule_title = copy_column_text(stmt, 4);
+    case_data->rule_description = copy_column_text(stmt, 5);
+    case_data->message_id = sqlite3_column_type(stmt, 6) == SQLITE_NULL
                                 ? NULL
                                 : malloc(sizeof(*case_data->message_id));
     case_data->mod_uid = malloc(sizeof(*case_data->mod_uid));
-    case_data->note = copy_column_text(stmt, 7);
+    case_data->note = copy_column_text(stmt, 8);
     case_data->time = malloc(sizeof(*case_data->time));
-    case_data->expire = sqlite3_column_type(stmt, 9) == SQLITE_NULL
+    case_data->expire = sqlite3_column_type(stmt, 10) == SQLITE_NULL
                             ? NULL
                             : malloc(sizeof(*case_data->expire));
     if (case_data->id != NULL)
@@ -597,25 +686,25 @@ struct DatabaseCase *database_get_case(int64_t id, u64snowflake gid) {
       *case_data->uid = (u64snowflake)sqlite3_column_int64(stmt, 2);
     if (case_data->type != NULL)
       *case_data->type = sqlite3_column_int(stmt, 3);
-    if (case_data->rid != NULL)
-      *case_data->rid = sqlite3_column_int64(stmt, 4);
     if (case_data->message_id != NULL)
-      *case_data->message_id = (u64snowflake)sqlite3_column_int64(stmt, 5);
+      *case_data->message_id = (u64snowflake)sqlite3_column_int64(stmt, 6);
     if (case_data->mod_uid != NULL)
-      *case_data->mod_uid = (u64snowflake)sqlite3_column_int64(stmt, 6);
+      *case_data->mod_uid = (u64snowflake)sqlite3_column_int64(stmt, 7);
     if (case_data->time != NULL)
-      *case_data->time = sqlite3_column_int64(stmt, 8);
+      *case_data->time = sqlite3_column_int64(stmt, 9);
     if (case_data->expire != NULL)
-      *case_data->expire = sqlite3_column_int64(stmt, 9);
+      *case_data->expire = sqlite3_column_int64(stmt, 10);
     if (case_data->id == NULL || case_data->gid == NULL ||
         case_data->uid == NULL || case_data->type == NULL ||
-        case_data->rid == NULL || case_data->mod_uid == NULL ||
+        case_data->rule_title == NULL || case_data->mod_uid == NULL ||
         case_data->time == NULL ||
         (sqlite3_column_type(stmt, 5) != SQLITE_NULL &&
+         case_data->rule_description == NULL) ||
+        (sqlite3_column_type(stmt, 6) != SQLITE_NULL &&
          case_data->message_id == NULL) ||
-        (sqlite3_column_type(stmt, 7) != SQLITE_NULL &&
+        (sqlite3_column_type(stmt, 8) != SQLITE_NULL &&
          case_data->note == NULL) ||
-        (sqlite3_column_type(stmt, 9) != SQLITE_NULL &&
+        (sqlite3_column_type(stmt, 10) != SQLITE_NULL &&
          case_data->expire == NULL)) {
       database_free_case(case_data);
       case_data = NULL;
@@ -646,7 +735,7 @@ struct DatabaseConf *database_get_conf(u64snowflake gid) {
     if (data->gid != NULL)
       *data->gid = (u64snowflake)sqlite3_column_int64(stmt, 0);
     u64snowflake **values[] = {&data->message, &data->member, &data->join_leave,
-                               &data->watch,   &data->mod,    &data->appeal};
+                               &data->watch,   &data->mod};
     for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
       if (sqlite3_column_type(stmt, (int)i + 1) != SQLITE_NULL) {
         *values[i] = malloc(sizeof(**values[i]));
@@ -654,6 +743,7 @@ struct DatabaseConf *database_get_conf(u64snowflake gid) {
           **values[i] = (u64snowflake)sqlite3_column_int64(stmt, (int)i + 1);
       }
     }
+    data->appeal = copy_column_text(stmt, 6);
     if (data->gid == NULL) {
       database_free_conf(data);
       data = NULL;
@@ -665,6 +755,11 @@ struct DatabaseConf *database_get_conf(u64snowflake gid) {
           data = NULL;
           break;
         }
+      }
+      if (data != NULL && sqlite3_column_type(stmt, 6) != SQLITE_NULL &&
+          data->appeal == NULL) {
+        database_free_conf(data);
+        data = NULL;
       }
     }
   }
@@ -719,13 +814,15 @@ void database_free_guild_dat(struct DatabaseGuildDat *data) {
     return;
   free(data->gid);
   free(data->curr_cid);
-  free((char *)data->rids);
+  free(data->curr_rid);
   free(data);
 }
 
 void database_free_rule(struct DatabaseRule *rule) {
   if (rule == NULL)
     return;
+  free(rule->gid);
+  free(rule->rid);
   free((char *)rule->title);
   free((char *)rule->description);
   free((char *)rule->color);
@@ -740,7 +837,8 @@ void database_free_case(struct DatabaseCase *case_data) {
   free(case_data->gid);
   free(case_data->uid);
   free(case_data->type);
-  free(case_data->rid);
+  free((char *)case_data->rule_title);
+  free((char *)case_data->rule_description);
   free(case_data->message_id);
   free(case_data->mod_uid);
   free((char *)case_data->note);
@@ -758,7 +856,7 @@ void database_free_conf(struct DatabaseConf *data) {
   free(data->join_leave);
   free(data->watch);
   free(data->mod);
-  free(data->appeal);
+  free((char *)data->appeal);
   free(data);
 }
 

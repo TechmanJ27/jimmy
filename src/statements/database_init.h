@@ -13,15 +13,18 @@ PRAGMA temp_store = MEMORY;
 CREATE TABLE IF NOT EXISTS guild_dat (
   gid INTEGER PRIMARY KEY,
   curr_cid INTEGER NOT NULL DEFAULT 0,
-  rids TEXT NOT NULL DEFAULT ""
+  curr_rid INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS rules (
-  rid INTEGER PRIMARY KEY AUTOINCREMENT,
+  gid INTEGER NOT NULL,
+  rid INTEGER NOT NULL,
   title TEXT NOT NULL,
   desc TEXT,
   color TEXT NOT NULL,
-  img TEXT
+  img TEXT,
+  PRIMARY KEY (gid, rid),
+  FOREIGN KEY (gid) REFERENCES guild_dat (gid) ON DELETE CASCADE
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS conf (
@@ -31,7 +34,7 @@ CREATE TABLE IF NOT EXISTS conf (
   join_leave INTEGER,
   watch INTEGER,
   mod INTEGER,
-  appeal INTEGER,
+  appeal TEXT,
   FOREIGN KEY (gid) REFERENCES guild_dat (gid) ON DELETE CASCADE
 ) STRICT;
 
@@ -40,15 +43,15 @@ CREATE TABLE IF NOT EXISTS cases (
   gid INTEGER NOT NULL,
   uid INTEGER NOT NULL,
   type INTEGER NOT NULL,
-  rid INTEGER NOT NULL,
+  rule_title TEXT NOT NULL,
+  rule_desc TEXT,
   mess_id INTEGER,
   mod_uid INTEGER NOT NULL,
   note TEXT,
   time INTEGER NOT NULL,
   expire INTEGER,
   PRIMARY KEY (id, gid),
-  FOREIGN KEY (gid) REFERENCES guild_dat (gid) ON DELETE CASCADE,
-  FOREIGN KEY (rid) REFERENCES rules (rid)
+  FOREIGN KEY (gid) REFERENCES guild_dat (gid) ON DELETE CASCADE
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS tbans (
