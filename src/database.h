@@ -51,7 +51,6 @@ struct DatabaseCase {
 struct DatabaseMember {
   u64snowflake *uid;
   u64snowflake *gid;
-  u64snowflake *link_uid;
   int *watch;
 };
 
@@ -83,6 +82,13 @@ int database_remove_expired_tbans(int64_t timestamp,
                                        size_t *count);
 int database_set_member(const struct DatabaseMember *member);
 int database_set_member_watch(u64snowflake uid, u64snowflake gid, int watch);
+
+int database_add_member_link(u64snowflake uid, u64snowflake gid,
+                             u64snowflake link_uid);
+int database_remove_member_link(u64snowflake uid, u64snowflake gid,
+                                u64snowflake link_uid);
+int database_list_member_links(u64snowflake uid, u64snowflake gid,
+                               u64snowflake **links, size_t *count);
 
 struct DatabaseGuildDat *database_get_guild_dat(u64snowflake gid);
 struct DatabaseRule *database_get_rule(int64_t rid);

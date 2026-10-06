@@ -348,20 +348,24 @@ int database_remove_expired_tbans(int64_t timestamp,
 int database_set_member(const struct DatabaseMember *member) {
   static sqlite3_stmt *stmt = NULL;
   static sqlite3 *owner = NULL;
+
   if (member == NULL || member->uid == NULL || member->gid == NULL ||
       member->watch == NULL)
     return SQLITE_MISUSE;
+
   int status = prepare_lazy(g_set_member_stmt, &stmt, &owner);
   if (status != SQLITE_OK)
     return status;
+
   status = bind_snowflake(stmt, 1, *member->uid);
   if (status == SQLITE_OK)
     status = bind_snowflake(stmt, 2, *member->gid);
   if (status == SQLITE_OK)
-    status = bind_optional_snowflake(stmt, 3, member->link_uid);
-  if (status == SQLITE_OK)
-    status = sqlite3_bind_int(stmt, 4, *member->watch);
-  return status == SQLITE_OK ? execute(stmt) : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
+    status = sqlite3_bind_int(stmt, 3, *member->watch);
+
+  return status == SQLITE_OK
+             ? execute(stmt)
+             : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
 }
 
 int database_set_member_watch(u64snowflake uid, u64snowflake gid, int watch) {
@@ -377,6 +381,104 @@ int database_set_member_watch(u64snowflake uid, u64snowflake gid, int watch) {
     status = sqlite3_bind_int(stmt, 3, watch);
   return status == SQLITE_OK ? execute(stmt)
                              : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
+}
+
+int database_add_member_link(u64snowflake uid, u64snowflake gid,
+                             u64snowflake link_uid) {
+  static sqlite3_stmt *stmt = NULL;
+  static sqlite3 *owner = NULL;
+
+  int status = prepare_lazy(g_add_member_link_stmt, &stmt, &owner);
+  if (status != SQLITE_OK)
+    return status;
+
+  status = bind_snowflake(stmt, 1, uid);
+  if (status == SQLITE_OK)
+    status = bind_snowflake(stmt, 2, gid);
+  if (status == SQLITE_OK)
+    status = bind_snowflake(stmt, 3, link_uid);
+
+  return status == SQLITE_OK
+             ? execute(stmt)
+             : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
+}
+
+int database_remove_member_link(u64snowflake uid, u64snowflake gid,
+                                u64snowflake link_uid) {
+  static sqlite3_stmt *stmt = NULL;
+  static sqlite3 *owner = NULL;
+
+  int status = prepare_lazy(g_remove_member_link_stmt, &stmt, &owner);
+  if (status != SQLITE_OK)
+    return status;
+
+  status = bind_snowflake(stmt, 1, uid);
+  if (status == SQLITE_OK)
+    status = bind_snowflake(stmt, 2, gid);
+  if (status == SQLITE_OK)
+    status = bind_snowflake(stmt, 3, link_uid);
+
+  return status == SQLITE_OK
+             ? execute(stmt)
+             : (sqlite3_reset(stmt), sqlite3_clear_bindings(stmt), status);
+}
+
+int database_list_member_links(u64snowflake uid, u64snowflake gid,
+                               u64snowflake **links, size_t *count) {
+  static sqlite3_stmt *stmt = NULL;
+  static sqlite3 *owner = NULL;
+
+  if (links == NULL || count == NULL)
+    return SQLITE_MISUSE;
+
+  *links = NULL;
+  *count = 0;
+
+  int status = prepare_lazy(g_list_member_links_stmt, &stmt, &owner);
+  if (status != SQLITE_OK)
+    return status;
+
+  status = bind_snowflake(stmt, 1, uid);
+  if (status == SQLITE_OK)
+    status = bind_snowflake(stmt, 2, gid);
+
+  if (status != SQLITE_OK) {
+    sqlite3_reset(stmt);
+    sqlite3_clear_bindings(stmt);
+    return status;
+  }
+
+  while ((status = sqlite3_step(stmt)) == SQLITE_ROW) {
+    u64snowflake *next =
+        realloc(*links, (*count + 1) * sizeof(**links));
+
+    if (next == NULL) {
+      free(*links);
+      *links = NULL;
+      *count = 0;
+
+      sqlite3_reset(stmt);
+      sqlite3_clear_bindings(stmt);
+      return SQLITE_NOMEM;
+    }
+
+    *links = next;
+    (*links)[*count] =
+        (u64snowflake)sqlite3_column_int64(stmt, 0);
+    (*count)++;
+  }
+
+  sqlite3_reset(stmt);
+  sqlite3_clear_bindings(stmt);
+
+  if (status != SQLITE_DONE) {
+    free(*links);
+    *links = NULL;
+    *count = 0;
+    return status;
+  }
+
+  return SQLITE_OK;
 }
 
 static char *copy_column_text(sqlite3_stmt *stmt, int column) {

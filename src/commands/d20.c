@@ -1,6 +1,5 @@
 #include "d20.h"
 
-#include <stdlib.h>
 #include "../random.h"
 
 #include <string.h>
@@ -17,7 +16,7 @@ void d20(struct discord *client, const struct discord_interaction *event) {
     content = ":x: Critical 1!";
     break;
   default:
-    snprintf(allocated_content, sizeof(allocated_content), ":game_die: You rolled a %d!", result);
+    snprintf(allocated_content, sizeof(allocated_content), ":game_die: You rolled %d!", result);
     content = allocated_content;
     break;
   }

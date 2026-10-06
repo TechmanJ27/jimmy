@@ -7,11 +7,12 @@
 
 #include <concord/discord.h>
 #include <concord/logmod.h>
+#include <concord/logconf.h>
 
 #include "token.h"
 
 #include <pthread.h>
-#include <string.h>
+#include <stdlib.h>
 
 #include <unistd.h>
 
@@ -74,16 +75,12 @@ int main(const int argc, char *argv[]) {
 
   printf("%s\n", "Initializing a discord bot...");
 
-  const struct discord_config CONFIG = {
-    .token = token,
-    .log = {
-      .level = LOGMOD_LEVEL_INFO,
-      .quiet = false,
-      .color = true
-    }
-  };
+  srand(time(NULL));
 
-  struct discord *client = discord_from_config(&CONFIG);
+  struct discord *client = discord_init(token);
+
+  logconf_set_level(discord_get_logconf(client), LOG_INFO);
+
   if (client == NULL) {
     fprintf(stderr, "%s", "\033[31mFATAL\033[0m - failed to initialize a Discord bot!\n");
     database_fini();

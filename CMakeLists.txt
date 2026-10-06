@@ -68,6 +68,29 @@ add_executable(jimmy
         src/commands/roll.h
         src/random.c
         src/random.h
+        src/macro.h
+        src/commands/warn.c
+        src/commands/warn.h
+        src/commands/kick.c
+        src/commands/kick.h
+        src/commands/ban.c
+        src/commands/ban.h
+        src/commands/link.c
+        src/commands/link.h
+        src/commands/unlink.c
+        src/commands/unlink.h
+        src/commands/linked.c
+        src/commands/linked.h
+        src/commands/cases.c
+        src/commands/cases.h
+        src/commands/log/message_log.c
+        src/commands/log/message_log.h
+        src/commands/log/join_leave_log.c
+        src/commands/log/join_leave_log.h
+        src/commands/log/watch_log.c
+        src/commands/log/watch_log.h
+        src/commands/log/mod_log.c
+        src/commands/log/mod_log.h
 )
 
 target_link_libraries(jimmy PRIVATE
